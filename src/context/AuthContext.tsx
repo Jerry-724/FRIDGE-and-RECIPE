@@ -1,16 +1,17 @@
 
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { User, AuthResponse } from '../types/api';
+import axios from "axios";
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (login_id: string, password: string) => Promise<void>;
+  login: (login_id: string, password: string) => Promise<boolean>;
   signup: (login_id: string, password: string, username: string) => Promise<void>;
   logout: () => void;
   updateUser: (user: Partial<User>) => Promise<void>;
-  deleteAccount: (password: string) => Promise<void>;
+  deleteAccount: (user_id: number, password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,7 +23,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   useEffect(() => {
     // Check for token in localStorage
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access_token');
     const savedUser = localStorage.getItem('user');
     
     if (token && savedUser) {
@@ -33,34 +34,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = async (login_id: string, password: string) => {
+  const login = async (login_id: string, password: string): Promise<boolean> => {
     try {
-      // For demonstration, we'll simulate an API call
-      // In a real app, you would call your backend API
       setIsLoading(true);
-      
-      // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock response - in a real app this would come from your API
-      const mockResponse: AuthResponse = {
-        user: {
-          login_id,
-          username: "사용자", // Default username
-          notification: true,
-        },
-        token: "mock-jwt-token"
-      };
-      
-      localStorage.setItem('token', mockResponse.token);
-      localStorage.setItem('user', JSON.stringify(mockResponse.user));
-      
-      setUser(mockResponse.user);
+
+      const response = await axios.post('http://localhost:8000/user/login', {
+        login_id,
+        password
+      });
+
+      const { access_token, user_id, login_id: resLoginId } = response.data;
+
+      localStorage.setItem('access_token', access_token);
+      localStorage.setItem('user', JSON.stringify({
+        user_id,
+        login_id: resLoginId
+      }));
       setIsAuthenticated(true);
-      
+      setUser(user);
+      return true;
     } catch (error) {
       console.error('Login failed:', error);
-      throw new Error('로그인에 실패했습니다. 다시 시도해주세요.');
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -69,13 +65,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signup = async (login_id: string, password: string, username: string) => {
     try {
       setIsLoading(true);
-      
-      // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock signup success - in a real app this would be your API call
-      // After successful signup, the user would need to log in manually
-      
+
+      await axios.post('http://localhost:8000/user/create', {
+        login_id,
+        username,
+        password1: password,
+        password2: password
+      });
     } catch (error) {
       console.error('Signup failed:', error);
       throw new Error('회원가입에 실패했습니다. 다시 시도해주세요.');
@@ -85,9 +82,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
     localStorage.removeItem('user');
-    setUser(null);
     setIsAuthenticated(false);
   };
 
@@ -113,23 +109,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteAccount = async (password: string) => {
+  const deleteAccount = async (user_id: number, password: string) => {
     try {
       setIsLoading(true);
-      
-      // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // In a real app, send the delete request to your API
-      // For now, just clear local storage and state
-      localStorage.removeItem('token');
+
+      const accessToken = localStorage.getItem('access_token');
+      const userFromLocalStorage = JSON.parse(localStorage.getItem('user') || '{}');
+      const userIdFromLocalStorage = userFromLocalStorage.user_id;
+
+      const response = await axios.delete(`http://localhost:8000/user/${userIdFromLocalStorage}/delete`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        },
+        data: { password }
+      });
+      localStorage.removeItem('access_token');
       localStorage.removeItem('user');
-      setUser(null);
       setIsAuthenticated(false);
-      
     } catch (error) {
       console.error('Account deletion failed:', error);
-      throw new Error('계정 삭제에 실패했습니다.');
+      throw new Error('비밀번호가 올바르지 않거나 삭제에 실패했습니다.');
     } finally {
       setIsLoading(false);
     }

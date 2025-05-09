@@ -113,7 +113,7 @@ const MyPageForm: React.FC = () => {
     }
     
     try {
-      await deleteAccount(deleteConfirmPassword);
+      await deleteAccount(user.user_id, deleteConfirmPassword);
       setSuccessMessage('탈퇴되었습니다.');
       setTimeout(() => {
         setSuccessMessage(null);

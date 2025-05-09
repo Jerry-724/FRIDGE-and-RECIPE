@@ -1,4 +1,6 @@
 
+// src/pages/Index.tsx
+
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 

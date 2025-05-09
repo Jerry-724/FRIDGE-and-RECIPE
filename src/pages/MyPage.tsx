@@ -1,3 +1,4 @@
+// src/pages/MyPage.tsx
 
 import React from 'react';
 import MyPageForm from '../components/MyPageForm';

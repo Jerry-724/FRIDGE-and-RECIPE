@@ -1,13 +1,20 @@
+// src/context/AuthContext.tsx
 
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { User, AuthResponse } from '../types/api';
+import api, { setAuthToken } from '@/api';
+import { User, TokenResponse } from '../types/api';  // TokenResponse 가져오기
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (login_id: string, password: string) => Promise<void>;
-  signup: (login_id: string, password: string, username: string) => Promise<void>;
+  signup: (
+    login_id: string,
+    username: string,
+    password1: string,
+    password2: string
+  ) => Promise<void>;
   logout: () => void;
   updateUser: (user: Partial<User>) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
@@ -17,96 +24,89 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 초기 로컬스토리지에서 가져오기
   useEffect(() => {
-    // Check for token in localStorage
     const token = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
-    
-    if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
-      setIsAuthenticated(true);
+    if (token && savedUser && savedUser !== 'undefined') {
+      setAuthToken(token);
+      try {
+        const u: User = JSON.parse(savedUser);
+        setUser(u);
+        setIsAuthenticated(true);
+      } catch {
+        localStorage.removeItem('user');
+      }
     }
-    
     setIsLoading(false);
   }, []);
 
   const login = async (login_id: string, password: string) => {
+    setIsLoading(true);
     try {
-      // For demonstration, we'll simulate an API call
-      // In a real app, you would call your backend API
-      setIsLoading(true);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock response - in a real app this would come from your API
-      const mockResponse: AuthResponse = {
-        user: {
-          login_id,
-          username: "사용자", // Default username
-          notification: true,
-        },
-        token: "mock-jwt-token"
+      // 1) 로그인 API 호출
+      const res = await api.post<TokenResponse>('/user/login', { login_id, password });
+      const { access_token, login_id: rid, user_id } = res.data;
+
+      // 2) 토큰 세팅
+      setAuthToken(access_token);
+
+      // 3) 최소한의 유저 객체 생성 (백엔드에서 user 정보를 더 받아오는 API가 있으면 그걸 호출하세요)
+      const u: User = {
+        user_id,
+        login_id: rid,
+        username: rid,           // 백엔드에서 username을 받아올 엔드포인트가 없으므로 임시로 login_id로 셋업
+        notification: true,      // 기본값
+        fcm_token: null,
       };
-      
-      localStorage.setItem('token', mockResponse.token);
-      localStorage.setItem('user', JSON.stringify(mockResponse.user));
-      
-      setUser(mockResponse.user);
+      setUser(u);
+      localStorage.setItem('user', JSON.stringify(u));
       setIsAuthenticated(true);
-      
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw new Error('로그인에 실패했습니다. 다시 시도해주세요.');
+    } catch (err: any) {
+      console.error('Login failed:', err);
+      throw new Error(err.response?.data?.detail || '로그인에 실패했습니다.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const signup = async (login_id: string, password: string, username: string) => {
+  const signup = async (
+    login_id: string,
+    username: string,
+    password1: string,
+    password2: string
+  ) => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock signup success - in a real app this would be your API call
-      // After successful signup, the user would need to log in manually
-      
-    } catch (error) {
-      console.error('Signup failed:', error);
-      throw new Error('회원가입에 실패했습니다. 다시 시도해주세요.');
+      // 회원가입 API 호출 (204 No Content)
+      await api.post('/user/create', { login_id, username, password1, password2 });
+      // 이후 자동 로그인 없이, 사용자에게 로그인 유도
+    } catch (err: any) {
+      console.error('Signup failed:', err);
+      throw new Error(err.response?.data?.detail || '회원가입에 실패했습니다.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    setAuthToken(null);
     setUser(null);
     setIsAuthenticated(false);
   };
 
+  // 나머지 updateUser, deleteAccount는 샘플 그대로
   const updateUser = async (updatedFields: Partial<User>) => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // In a real app, send the updated fields to your API
-      // For now, just update the local state
-      const updatedUser = { ...user, ...updatedFields } as User;
-      
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-      setUser(updatedUser);
-      
-    } catch (error) {
-      console.error('User update failed:', error);
+      // 실제 API 호출이 필요하면 여기서 api.patch…
+      const updated = { ...user!, ...updatedFields };
+      setUser(updated);
+      localStorage.setItem('user', JSON.stringify(updated));
+    } catch {
       throw new Error('사용자 정보 업데이트에 실패했습니다.');
     } finally {
       setIsLoading(false);
@@ -114,22 +114,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteAccount = async (password: string) => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // In a real app, send the delete request to your API
-      // For now, just clear local storage and state
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      setUser(null);
-      setIsAuthenticated(false);
-      
-    } catch (error) {
-      console.error('Account deletion failed:', error);
-      throw new Error('계정 삭제에 실패했습니다.');
+      // 실제 API 호출: DELETE /user/{user_id}/delete
+      await api.delete(`/user/${user!.user_id}/delete`, { data: { password } });
+      logout();
+    } catch (err: any) {
+      throw new Error(err.response?.data?.detail || '계정 삭제에 실패했습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -145,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signup,
         logout,
         updateUser,
-        deleteAccount
+        deleteAccount,
       }}
     >
       {children}
@@ -154,9 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };
